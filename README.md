@@ -60,7 +60,7 @@ Para parar: `Ctrl+C` no terminal.
 
 - [x] Etapa 1 – Container com FastAPI
 - [x] Etapa 2 – Treino, desempenho esperado e reset
-- [x] Etapa 3 – Predição com e sem rótulos
+- [ ] Etapa 3 – Predição com e sem rótulos
 - [ ] Etapa 4 – Compactação + criptografia ponta-a-ponta e cliente
 - [ ] Etapa 5 – Deploy no Azure
 
