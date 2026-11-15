@@ -5,6 +5,8 @@ from pathlib import Path
 import joblib
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import KFold, cross_validate
 from sklearn.pipeline import Pipeline
@@ -17,6 +19,7 @@ PASTA_MODELOS = Path("/code/modelos")
 PASTA_MODELOS.mkdir(exist_ok=True)
 ARQ_MODELO = PASTA_MODELOS / "modelo.joblib"
 ARQ_METRICAS = PASTA_MODELOS / "metricas.json"
+ARQ_PREVISOES = PASTA_MODELOS / "previsoes.csv"
 
 FEATURES = ["time-5", "time-4", "time-3", "time-2", "time-1"]
 ALVO = "time"
@@ -92,4 +95,50 @@ async def train(arquivo: UploadFile = File(...)):
 def reset():
     ARQ_MODELO.unlink(missing_ok=True)
     ARQ_METRICAS.unlink(missing_ok=True)
+    ARQ_PREVISOES.unlink(missing_ok=True)
     return {"mensagem": "Modelo apagado. Pronto para treinar em outra base."}
+
+
+@app.post("/predict")
+async def predict(arquivo: UploadFile = File(...)):
+    if not ARQ_MODELO.exists():
+        raise HTTPException(400, "Nenhum modelo treinado. Use /train primeiro.")
+    modelo = joblib.load(ARQ_MODELO)
+
+    # Se o CSV tiver a coluna 'time', é teste (avaliamos); senão, é aplicação
+    conteudo = await arquivo.read()
+    tem_rotulo = ALVO in pd.read_csv(io.BytesIO(conteudo), nrows=0).columns
+    colunas = FEATURES + [ALVO] if tem_rotulo else FEATURES
+    df = ler_csv(conteudo, colunas)
+
+    # Previsão (o pipeline aplica o min-max do treino automaticamente)
+    df["time_previsto"] = modelo.predict(df[FEATURES]).round(4)
+    df.to_csv(ARQ_PREVISOES, index=False)
+
+    # Alerta: quantos valores ficaram fora da faixa (mín/máx) vista no treino
+    scaler = modelo.named_steps["minmax"]
+    fora = (df[FEATURES] < scaler.data_min_) | (df[FEATURES] > scaler.data_max_)
+
+    resposta = {
+        "mensagem": "Previsões feitas! Baixe o CSV em /download",
+        "linhas_previstas": len(df),
+        "valores_fora_da_faixa_do_treino": int(fora.values.sum()),
+    }
+
+    if tem_rotulo:
+        y, y_prev = df[ALVO], df["time_previsto"]
+        resposta["desempenho_real"] = {
+            "rmse": round(float(mean_squared_error(y, y_prev) ** 0.5), 4),
+            "mae": round(float(mean_absolute_error(y, y_prev)), 4),
+            "r2": round(float(r2_score(y, y_prev)), 4),
+        }
+        resposta["desempenho_esperado"] = json.loads(ARQ_METRICAS.read_text())
+
+    return resposta
+
+
+@app.get("/download")
+def download():
+    if not ARQ_PREVISOES.exists():
+        raise HTTPException(404, "Nenhuma previsão feita ainda. Use /predict primeiro.")
+    return FileResponse(ARQ_PREVISOES, media_type="text/csv", filename="previsoes.csv")
