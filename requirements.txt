@@ -4,4 +4,3 @@ python-multipart
 pandas
 scikit-learn
 joblib
-cryptography
