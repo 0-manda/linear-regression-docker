@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Teste da criptografia</title>
+  <style>
+    body { font-family: sans-serif; max-width: 800px; margin: 20px auto; padding: 0 16px; }
+    pre { background: #eee; padding: 10px; white-space: pre-wrap; word-break: break-all; }
+    #erro { color: red; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Teste da criptografia (cripto.js)</h1>
+
+  <p><input type="file" id="arquivo"></p>
+  <p><input type="password" id="senha" placeholder="Senha"></p>
+  <p>
+    <button onclick="executar('criptografar')">Criptografar</button>
+    <button onclick="executar('descriptografar')">Descriptografar</button>
+  </p>
+
+  <p id="erro"></p>
+  <p id="info"></p>
+  <h3>Primeiros 64 bytes do resultado (como texto)</h3>
+  <pre id="texto"></pre>
+  <h3>Primeiros 64 bytes do resultado (em hexadecimal)</h3>
+  <pre id="hex"></pre>
+
+  <script src="cripto.js"></script>
+  <script>
+    async function executar(acao) {
+      document.getElementById("erro").textContent = "";
+      const file = document.getElementById("arquivo").files[0];
+      const senha = document.getElementById("senha").value;
+      if (!file) {
+        document.getElementById("erro").textContent = "Escolha um arquivo.";
+        return;
+      }
+
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let resultado, nome;
+        if (acao === "criptografar") {
+          resultado = criptografar(bytes, senha);
+          nome = file.name + ".cripto";
+        } else {
+          resultado = descriptografar(bytes, senha);
+          nome = file.name.endsWith(".cripto") ? file.name.slice(0, -7) : "decifrado_" + file.name;
+        }
+        mostrarBytes(resultado);
+        document.getElementById("info").textContent =
+          "Resultado: " + nome + " (" + resultado.length + " bytes) baixado.";
+        baixarBlob(new Blob([resultado]), nome);
+      } catch (erro) {
+        document.getElementById("erro").textContent = "Erro: " + erro.message;
+      }
+    }
+
+    // Mostra os primeiros bytes: cifrado fica ilegível, decifrado volta a ser texto
+    function mostrarBytes(bytes) {
+      const inicio = bytes.subarray(0, 64);
+      let texto = "", hex = "";
+      for (const b of inicio) {
+        texto += (b >= 32 && b < 127) || b === 10 ? String.fromCharCode(b) : "·";
+        hex += b.toString(16).padStart(2, "0") + " ";
+      }
+      document.getElementById("texto").textContent = texto;
+      document.getElementById("hex").textContent = hex;
+    }
+  </script>
+</body>
+</html>

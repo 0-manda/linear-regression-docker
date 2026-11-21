@@ -1,19 +1,34 @@
 import io
 import json
+import os
 from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, Response
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import GridSearchCV, KFold, cross_val_predict
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler
 from app.graficos import grafico_teste, grafico_treino
+from app.cripto import criptografar, descriptografar
 
 app = FastAPI(title="Trabalho PI - Regressão com KNN")
+
+# CORS: permite que um front em outra origem (outra porta, domínio ou file://) chame a API.
+# Usamos "*" (qualquer origem) porque a API não usa cookies nem login
+# e os arquivos já trafegam criptografados.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=False,
+    expose_headers=["Content-Disposition"],  # deixa o front ler o nome do arquivo no /download
+)
 
 # Onde o modelo fica salvo (vamos ligar essa pasta a um volume do Docker)
 PASTA_MODELOS = Path("/code/modelos")
@@ -26,6 +41,24 @@ ARQ_GRAFICO_TESTE = PASTA_MODELOS / "grafico_teste.png"
 
 FEATURES = ["time-5", "time-4", "time-3", "time-2", "time-1"]
 ALVO = "time"
+
+
+def pegar_senha() -> str:
+    """A senha vem da variável de ambiente SENHA_PI (nunca fica no código)."""
+    senha = os.environ.get("SENHA_PI")
+    if not senha:
+        raise HTTPException(500, "Servidor sem senha: defina a variável de ambiente SENHA_PI.")
+    return senha
+
+
+async def ler_arquivo_criptografado(arquivo: UploadFile) -> bytes:
+    """Lê o arquivo enviado (criptografado) e devolve o conteúdo original."""
+    senha = pegar_senha()
+    try:
+        return descriptografar(await arquivo.read(), senha)
+    except ValueError as erro:
+        raise HTTPException(400, str(erro))
+
 
 def ler_csv(conteudo: bytes, colunas_obrigatorias: list[str]) -> pd.DataFrame:
     """Lê o CSV, confere as colunas e remove linhas inválidas."""
@@ -65,7 +98,7 @@ def calcular_metricas(y, y_prev):
 
 @app.post("/train")
 async def train(arquivo: UploadFile = File(...)):
-    df = ler_csv(await arquivo.read(), FEATURES + [ALVO])
+    df = ler_csv(await ler_arquivo_criptografado(arquivo), FEATURES + [ALVO])
     if len(df) < 20:
         raise HTTPException(400, "Poucas linhas para treinar (mínimo 20).")
 
@@ -158,7 +191,7 @@ async def predict(arquivo: UploadFile = File(...)):
 
     # Se o CSV tiver a coluna 'time' preenchida, é teste (avaliamos);
     # se não tiver (ou estiver vazia), é aplicação (só prevemos)
-    conteudo = await arquivo.read()
+    conteudo = await ler_arquivo_criptografado(arquivo)
     bruto = pd.read_csv(io.BytesIO(conteudo))
     tem_rotulo = ALVO in bruto.columns and bruto[ALVO].notna().any()
     colunas = FEATURES + [ALVO] if tem_rotulo else FEATURES
@@ -230,4 +263,10 @@ def ver_grafico_teste():
 def download():
     if not ARQ_PREVISOES.exists():
         raise HTTPException(404, "Nenhuma previsão feita ainda. Use /predict primeiro.")
-    return FileResponse(ARQ_PREVISOES, media_type="text/csv", filename="previsoes.csv")
+    # No servidor o CSV fica normal; ele só é criptografado na hora de enviar
+    cifrado = criptografar(ARQ_PREVISOES.read_bytes(), pegar_senha())
+    return Response(
+        cifrado,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": 'attachment; filename="previsoes.cripto"'},
+    )
