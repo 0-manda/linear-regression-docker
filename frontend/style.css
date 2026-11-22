@@ -1,5 +1,5 @@
 /* =========================================================================
-   Peixes Estranhos — estilo do front do Trabalho PI
+   Aprendizado Supervisionado — estilo do front do Trabalho PI
    ========================================================================= */
 :root{
   --glow:#7ff0e0; --lure:#ffd86b; --coral:#ff8a96; --violet:#b9a0ff;
@@ -120,7 +120,7 @@ body{position:relative;font-family:'Instrument Sans',system-ui,sans-serif;color:
 main{position:relative;z-index:3;width:min(1100px,calc(100% - 300px));margin-left:max(40px,calc(50% - 690px))}
 .trench{min-height:115vh;padding-top:12vh}
 .eyebrow{font-family:var(--mono);font-size:.76rem;letter-spacing:.22em;text-transform:uppercase;color:var(--glow);opacity:.85}
-.trench h2{font-family:var(--serif);font-weight:300;font-size:clamp(3rem,8.5vw,7rem);line-height:.9;margin:.25em 0 .35em;letter-spacing:-.02em}
+.trench h2{font-family:var(--serif);font-weight:300;font-size:clamp(2.1rem,7.2vw,6rem);line-height:.9;margin:.25em 0 .35em;letter-spacing:-.02em}
 .trench h2 em{font-style:italic;font-weight:500;display:block;color:#bff8ef}
 .trench h2 em span{display:inline-block;animation:arp 3.2s ease-in-out infinite}
 @keyframes arp{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-.12em);color:var(--glow);text-shadow:0 0 24px rgba(127,240,224,.6)}}
