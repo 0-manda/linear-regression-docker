@@ -1,0 +1,6 @@
+# O que NÃO vai para o GitHub
+__pycache__/
+*.pyc
+.env
+modelos/
+*.cripto

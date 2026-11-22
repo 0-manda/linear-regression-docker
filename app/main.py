@@ -7,7 +7,8 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import GridSearchCV, KFold, cross_val_predict
 from sklearn.neighbors import KNeighborsRegressor
@@ -30,9 +31,21 @@ app.add_middleware(
     expose_headers=["Content-Disposition"],  # deixa o front ler o nome do arquivo no /download
 )
 
+# O front (pasta frontend/) é servido pela própria API em /site.
+# html=True faz /site/ abrir o index.html automaticamente.
+PASTA_FRONT = Path(__file__).parent.parent / "frontend"
+app.mount("/site", StaticFiles(directory=PASTA_FRONT, html=True), name="site")
+
+
+@app.get("/")
+def inicio():
+    # Quem abre http://localhost:8000 cai direto no front
+    return RedirectResponse("/site/")
+
+
 # Onde o modelo fica salvo (vamos ligar essa pasta a um volume do Docker)
 PASTA_MODELOS = Path("/code/modelos")
-PASTA_MODELOS.mkdir(exist_ok=True)
+PASTA_MODELOS.mkdir(parents=True, exist_ok=True)
 ARQ_MODELO = PASTA_MODELOS / "modelo.joblib"
 ARQ_METRICAS = PASTA_MODELOS / "metricas.json"
 ARQ_PREVISOES = PASTA_MODELOS / "previsoes.csv"

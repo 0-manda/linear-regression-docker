@@ -1,0 +1,7 @@
+# O que NÃO entra na imagem Docker
+.git
+analise/
+__pycache__
+*.cripto
+.env
+.vscode

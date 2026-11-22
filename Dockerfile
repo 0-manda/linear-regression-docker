@@ -8,8 +8,9 @@ WORKDIR /code
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Depois copia o código
+# Depois copia o código da API e o front (servido em /site)
 COPY app/ ./app/
+COPY frontend/ ./frontend/
 
 # Porta em que a API vai escutar
 EXPOSE 8000

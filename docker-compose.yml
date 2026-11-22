@@ -1,0 +1,15 @@
+# Sobe a API (e o front em /site) com um comando só:
+#   1. copie o .env.example para .env e troque a senha
+#   2. docker compose up --build
+# Depois abra http://localhost:8000
+services:
+  api:
+    build: .                    # usa o Dockerfile desta pasta
+    ports:
+      - "8000:8000"             # porta do PC : porta do container
+    env_file: .env              # a SENHA_PI vem daqui (o .env não vai para o git)
+    volumes:
+      - modelos-pi:/code/modelos  # guarda modelo, métricas e gráficos entre execuções
+
+volumes:
+  modelos-pi:
