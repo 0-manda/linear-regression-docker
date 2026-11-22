@@ -455,6 +455,13 @@ async function processar(pedido, tipo) {
       ? `nuvem decifrou, aplicou min-max e treinou o modelo em <b>${segundos(tempo)}</b>`
       : `nuvem decifrou, aplicou o min-max do treino e previu <b>${int(resp.linhas_previstas)}</b> linhas em <b>${segundos(tempo)}</b>`);
 
+    // a API decide se é teste ou aplicação olhando se 'time' tem valores;
+    // se veio a coluna vazia, corrige o rótulo do papel e do cabeçalho
+    if (pedido.modo !== 'treino' && !resp.desempenho_real && tipo !== 'aplicação') {
+      $('#pmeta').textContent = bytes(file.size) + ' · aplicação';
+      $('#trenchEyebrow').textContent = 'aplicação sem rótulo';
+    }
+
     // 4) previsões voltam cifradas
     let prev = null, prevBlob = null;
     if (pedido.modo !== 'treino') {
@@ -672,7 +679,10 @@ function comparacao(esp, real, conclusao) {
 function desenharAplicacao(file, resp, prev, blob, tempo) {
   ultimoBlob = blob; ultimoNome = 'previsoes_' + file.name.replace(/\.csv$/i, '') + '.csv';
   const p = prev.rows.map(r => r.time_previsto).filter(v => v != null);
-  const media = p.reduce((a, b) => a + b, 0) / (p.length || 1);
+  // laço em vez de Math.min(...p): com milhares de linhas o spread estoura a pilha
+  let soma = 0, menor = Infinity, maior = -Infinity;
+  for (const v of p) { soma += v; if (v < menor) menor = v; if (v > maior) maior = v; }
+  const media = soma / (p.length || 1);
   const fora = resp.valores_fora_da_faixa_do_treino || 0;
   const negativos = p.filter(v => v < 0).length;
   const linhas = ['Sem a coluna time não há gabarito, então a API devolveu só as previsões.'];
@@ -681,7 +691,7 @@ function desenharAplicacao(file, resp, prev, blob, tempo) {
   results.innerHTML =
     cabecalho('aplicação · só previsões', esc(file.name), `previsto na nuvem em ${segundos(tempo)}`) +
     bolhas([[int(resp.linhas_previstas), 'linhas previstas'], [int(fora), 'fora da faixa', fora > 0], [fmt(media), 'média prevista'],
-      [fmt(Math.min(...p)), 'menor previsão', negativos > 0], [fmt(Math.max(...p)), 'maior previsão']]) +
+      [fmt(menor), 'menor previsão', negativos > 0], [fmt(maior), 'maior previsão']]) +
     anotacoes('Anotações do tamboril', linhas) +
     cabecalho('previsões', 'O que veio <em>na rede</em>', '', `<button class="btn primary" data-act="baixar">baixar previsões (.csv)</button>`) +
     tabelaPrevisoes(prev, null) +
