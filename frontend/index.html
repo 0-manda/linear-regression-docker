@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Peixes Estranhos — Trabalho PI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Fraunces:ital,opsz,wght@0,9..144,300..800;1,9..144,300..800&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ======================= água (fundo fixo) ======================= -->
+<div class="sea" aria-hidden="true"></div>
+<div class="rays" aria-hidden="true">
+  <i style="left:6%;width:9vw;animation-delay:-2s"></i>
+  <i style="left:22%;width:5vw;animation-delay:-6s"></i>
+  <i style="left:38%;width:13vw;animation-delay:-1s"></i>
+  <i style="left:61%;width:6vw;animation-delay:-8s"></i>
+  <i style="left:74%;width:11vw;animation-delay:-4s"></i>
+  <i style="left:92%;width:5vw;animation-delay:-3s"></i>
+</div>
+<div class="abyss" id="abyss" aria-hidden="true"></div>
+<div class="bubbles" id="bubbles" aria-hidden="true"></div>
+<div class="school" id="school" aria-hidden="true"></div>
+
+<div class="surface" aria-hidden="true">
+  <svg viewBox="0 0 1200 46" preserveAspectRatio="none"><path d="M0 20 Q75 4 150 20 T300 20 T450 20 T600 20 T750 20 T900 20 T1050 20 T1200 20 V0 H0Z" fill="rgba(220,255,255,.35)"/></svg>
+  <svg viewBox="0 0 1200 46" preserveAspectRatio="none"><path d="M0 28 Q50 14 100 28 T200 28 T300 28 T400 28 T500 28 T600 28 T700 28 T800 28 T900 28 T1000 28 T1100 28 T1200 28 V0 H0Z" fill="rgba(220,255,255,.25)"/></svg>
+</div>
+
+<!-- ======================= painel da nuvem (canto) ======================= -->
+<button class="cloud-pill" id="cloudPill" aria-expanded="false" aria-controls="cabin">
+  <span class="dot" id="cloudDot"></span><span id="cloudText">conectando…</span>
+</button>
+<div class="cabin" id="cabin" hidden>
+  <label class="field">
+    <span>Endereço da API</span>
+    <input type="url" id="apiUrl" spellcheck="false" placeholder="http://localhost:8000">
+  </label>
+  <div class="cabin-row">
+    <button class="btn small" id="checkApi">verificar conexão</button>
+  </div>
+  <div class="cabin-model" id="cabinModel"></div>
+  <div class="cabin-row">
+    <button class="btn small danger" id="resetModel">resetar modelo</button>
+  </div>
+  <p class="cabin-note">O reset apaga o modelo, as métricas, as previsões e os gráficos guardados na nuvem.</p>
+</div>
+
+<!-- ======================= linha e anzol ======================= -->
+<div id="line" aria-hidden="true"></div>
+<div class="rig" id="rig">
+  <div class="rig-inner" id="rigInner">
+    <div class="paper" id="paper"><div class="sheet" id="sheet"><div class="ptext"><span class="pname" id="pname"></span><span class="pmeta" id="pmeta"></span></div></div></div>
+    <svg class="hook" id="hookSvg" viewBox="0 0 56 110" role="button" tabindex="0" aria-label="Escolher arquivo CSV">
+      <defs><linearGradient id="steel" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7d8a96"/><stop offset=".45" stop-color="#f1f6fa"/><stop offset="1" stop-color="#8996a3"/></linearGradient></defs>
+      <rect x="0" y="0" width="56" height="110" fill="transparent"/>
+      <circle cx="34" cy="9" r="6" fill="none" stroke="url(#steel)" stroke-width="3"/>
+      <path d="M34 15 V76 C34 94 27 100 19 100 C11 100 6 94 6 84 V64" fill="none" stroke="url(#steel)" stroke-width="3.8" stroke-linecap="round"/>
+      <path d="M6 64 L13 74" fill="none" stroke="url(#steel)" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M33 22 V72" stroke="rgba(255,255,255,.7)" stroke-width="1"/>
+    </svg>
+    <div class="dlabel"><b id="dval"></b><span id="dstat"></span></div>
+  </div>
+</div>
+
+<!-- ======================= tela inicial ======================= -->
+<section class="hero">
+  <div class="call" id="call">
+    <h1 id="callTitle">Solte o CSV de <em id="callMode">treino</em> no anzol</h1>
+    <p id="callHint">ou toque no anzol para escolher um arquivo</p>
+
+    <div class="modes" role="radiogroup" aria-label="Tipo de arquivo">
+      <button class="mode on" data-mode="treino" role="radio" aria-checked="true">treino</button>
+      <button class="mode" data-mode="teste" role="radio" aria-checked="false">teste / aplicação</button>
+    </div>
+
+    <label class="senha">
+      <span>senha da linha</span>
+      <input type="password" id="senha" autocomplete="off" placeholder="••••••">
+    </label>
+
+    <p class="err" id="err" role="status"></p>
+  </div>
+</section>
+<input type="file" id="arquivo" accept=".csv,text/csv" hidden>
+
+<!-- ======================= mar abaixo ======================= -->
+<main id="deep">
+  <section class="trench" id="trench">
+    <div class="eyebrow" id="trenchEyebrow">aquário de dados · em arpejo</div>
+    <h2>Peixes <em id="weird">Estranhos</em></h2>
+    <div class="weight" id="weight"></div>
+    <ol class="log" id="log" aria-live="polite"></ol>
+  </section>
+  <section id="results"></section>
+</main>
+
+<footer id="seabed">
+  <svg viewBox="0 0 1200 360" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <defs>
+      <linearGradient id="sand" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d4a4a"/><stop offset="1" stop-color="#151c1f"/></linearGradient>
+      <linearGradient id="kelp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3fae8a"/><stop offset="1" stop-color="#0f3b33"/></linearGradient>
+    </defs>
+    <g fill="none" stroke="url(#kelp)" stroke-linecap="round">
+      <path class="sway" stroke-width="9" d="M90 360 Q70 290 100 230 Q125 170 95 100"/>
+      <path class="sway" stroke-width="6" style="animation-delay:-1.5s" d="M120 360 Q140 300 118 255 Q100 210 128 170"/>
+      <path class="sway" stroke-width="8" style="animation-delay:-3s" d="M360 360 Q340 300 372 250 Q398 200 366 140 Q350 110 372 70"/>
+      <path class="sway" stroke-width="5" style="animation-delay:-.7s" d="M640 360 Q660 320 640 290 Q622 260 650 230"/>
+      <path class="sway" stroke-width="9" style="animation-delay:-2.2s" d="M910 360 Q880 290 920 230 Q950 180 915 120"/>
+      <path class="sway" stroke-width="6" style="animation-delay:-4s" d="M950 360 Q975 305 950 265 Q930 230 960 200"/>
+      <path class="sway" stroke-width="7" style="animation-delay:-1s" d="M1130 360 Q1110 300 1140 240 Q1160 200 1135 150"/>
+    </g>
+    <g opacity=".7">
+      <path class="sway" fill="#ff8a96" style="animation-delay:-2s" d="M520 330 q-10 -40 -4 -60 q6 20 8 30 q4 -30 14 -40 q-2 30 -6 50 q10 -20 20 -24 q-8 24 -20 44z"/>
+      <path class="sway" fill="#b9a0ff" style="animation-delay:-3.4s" d="M790 335 q-6 -30 0 -48 q6 18 6 28 q6 -24 16 -30 q-4 26 -10 44z"/>
+    </g>
+    <path d="M0 315 Q150 295 300 312 T600 308 T900 314 T1200 304 V360 H0Z" fill="url(#sand)"/>
+    <g fill="#1d2629"><ellipse cx="250" cy="322" rx="46" ry="18"/><ellipse cx="290" cy="328" rx="28" ry="12"/><ellipse cx="1040" cy="320" rx="52" ry="20"/></g>
+  </svg>
+  <div class="floor"><button class="btn" id="reel">puxar a linha ↑</button><p id="floorText">fundo do aquário</p></div>
+</footer>
+
+<button class="follow" id="follow">↓ seguir o anzol</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="cripto.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
