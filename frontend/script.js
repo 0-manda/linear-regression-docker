@@ -21,6 +21,9 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 
 const FEATURES = ['time-5', 'time-4', 'time-3', 'time-2', 'time-1'];
 const ALVO = 'time';
+const PREV = 'time_previsto_knn';               // coluna de previsão do KNN (modelo principal)
+const PREV_LINEAR = 'time_previsto_regressao_linear'; // coluna da regressão linear (só para comparar)
+const ehPrevisao = c => c === PREV || c === PREV_LINEAR;
 
 /* =========================================================================
    1. API
@@ -613,7 +616,7 @@ function finalizarRelatorio() {
 /* --- treino: desempenho esperado --- */
 function desenharTreino(file, local, resp, tempo) {
   const d = resp.desempenho_esperado || {};
-  const itens = [[fmt(d.rmse), 'RMSE esperado'], [fmt(d.mae), 'MAE esperado'], [fmt(d.r2, 3), 'R² esperado'], [int(d.linhas_treino ?? local.n), 'linhas de treino']];
+  const itens = [[fmt(d.rmse), 'RMSE esperado (KNN)'], [fmt(d.mae), 'MAE esperado (KNN)'], [fmt(d.r2, 3), 'R² esperado (KNN)'], [int(d.linhas_treino ?? local.n), 'linhas de treino']];
   if (d.melhor_k != null) itens.push([d.melhor_k, 'vizinhos (k)']);
   const insights = Array.isArray(d.insights) && d.insights.length ? d.insights : ['Modelo treinado.'];
   results.innerHTML =
@@ -634,15 +637,15 @@ function desenharTeste(file, resp, prev, blob, tempo) {
   const esp = resp.desempenho_esperado, real = resp.desempenho_real;
   const fora = resp.valores_fora_da_faixa_do_treino || 0;
   const linhas = (resp.insights || []).map(t => /^Atenção/.test(t) ? { cls: 'alert', html: esc(t) } : t);
-  const negativos = prev.rows.filter(r => r.time_previsto < 0).length;
+  const negativos = prev.rows.filter(r => r[PREV] < 0).length;
   if (negativos) linhas.push({ cls: 'alert', html: `<b>${negativos}</b> previsão(ões) negativa(s), sendo que <b>time</b> nunca é negativo na base.` });
   results.innerHTML =
-    cabecalho('teste · desempenho real × esperado', esc(file.name), `${int(resp.linhas_previstas)} linhas previstas na nuvem em ${segundos(tempo)}`) +
+    cabecalho('teste · desempenho real × esperado (KNN)', esc(file.name), `${int(resp.linhas_previstas)} linhas previstas na nuvem em ${segundos(tempo)}`) +
     comparacao(esp, real, resp.insights && resp.insights[1]) +
     anotacoes('Anotações do tamboril', linhas.length ? linhas : ['Sem observações.']) +
     grafico('/graficos/teste', 'Desempenho real no teste') +
     cabecalho('previsões', 'O que veio <em>na rede</em>', '', `<button class="btn primary" data-act="baixar">baixar previsões (.csv)</button>`) +
-    tabelaPrevisoes(prev, real.mae) +
+    tabelaPrevisoes(prev, real.mae, resp.regressao_linear && resp.regressao_linear.desempenho_real.mae) +
     `<div class="actions reveal"><button class="btn" data-act="outro">soltar outro csv</button></div>`;
   finalizarRelatorio();
 }
@@ -678,7 +681,7 @@ function comparacao(esp, real, conclusao) {
 /* --- aplicação sem rótulo: só previsões --- */
 function desenharAplicacao(file, resp, prev, blob, tempo) {
   ultimoBlob = blob; ultimoNome = 'previsoes_' + file.name.replace(/\.csv$/i, '') + '.csv';
-  const p = prev.rows.map(r => r.time_previsto).filter(v => v != null);
+  const p = prev.rows.map(r => r[PREV]).filter(v => v != null);
   // laço em vez de Math.min(...p): com milhares de linhas o spread estoura a pilha
   let soma = 0, menor = Infinity, maior = -Infinity;
   for (const v of p) { soma += v; if (v < menor) menor = v; if (v > maior) maior = v; }
@@ -686,7 +689,7 @@ function desenharAplicacao(file, resp, prev, blob, tempo) {
   const fora = resp.valores_fora_da_faixa_do_treino || 0;
   const negativos = p.filter(v => v < 0).length;
   const linhas = ['Sem a coluna time não há gabarito, então a API devolveu só as previsões.'];
-  if (fora) linhas.push({ cls: 'alert', html: `<b>${fora}</b> valor(es) de entrada fora da faixa vista no treino: essas linhas tendem a ter erro maior.` });
+  if (fora) linhas.push({ cls: 'alert', html: `<b>${fora}</b> valor(es) de entrada fora da faixa vista no treino: essas linhas podem ter erro maior.` });
   if (negativos) linhas.push({ cls: 'alert', html: `<b>${negativos}</b> previsão(ões) negativa(s), sendo que <b>time</b> nunca é negativo na base de treino.` });
   results.innerHTML =
     cabecalho('aplicação · só previsões', esc(file.name), `previsto na nuvem em ${segundos(tempo)}`) +
@@ -699,14 +702,17 @@ function desenharAplicacao(file, resp, prev, blob, tempo) {
   finalizarRelatorio();
 }
 
-function tabelaPrevisoes(prev, maeReal) {
+function tabelaPrevisoes(prev, maeReal, maeLinear) {
   const temAlvo = prev.fields.includes(ALVO);
+  const temLinear = temAlvo && prev.fields.includes(PREV_LINEAR);  // erro da regressão linear (só para comparar)
   const cols = [...prev.fields];
-  const head = `<tr><th class="idx">#</th>${cols.map(c => `<th class="${c === 'time_previsto' ? 'pred' : ''}">${esc(c)}</th>`).join('')}${temAlvo ? '<th>|erro|</th>' : ''}</tr>`;
+  const head = `<tr><th class="idx">#</th>${cols.map(c => `<th class="${ehPrevisao(c) ? 'pred' : ''}">${esc(c)}</th>`).join('')}${temAlvo ? '<th>|erro| KNN</th>' : ''}${temLinear ? '<th>|erro| regressão linear</th>' : ''}</tr>`;
   const body = prev.rows.slice(0, 15).map((r, i) => {
-    const e = temAlvo ? Math.abs(r[ALVO] - r.time_previsto) : null;
-    return `<tr><td class="idx">${i + 1}</td>${cols.map(c => `<td class="${c === 'time_previsto' ? 'pred' : ''}">${fmt(r[c])}</td>`).join('')}` +
-      (temAlvo ? `<td class="${maeReal && e > 2 * maeReal ? 'err-hi' : ''}">${fmt(e)}</td>` : '') + '</tr>';
+    const e = temAlvo ? Math.abs(r[ALVO] - r[PREV]) : null;
+    const eLinear = temLinear ? Math.abs(r[ALVO] - r[PREV_LINEAR]) : null;
+    return `<tr><td class="idx">${i + 1}</td>${cols.map(c => `<td class="${ehPrevisao(c) ? 'pred' : ''}">${fmt(r[c])}</td>`).join('')}` +
+      (temAlvo ? `<td class="${maeReal && e > 2 * maeReal ? 'err-hi' : ''}">${fmt(e)}</td>` : '') +
+      (temLinear ? `<td class="${maeLinear && eLinear > 2 * maeLinear ? 'err-hi' : ''}">${fmt(eLinear)}</td>` : '') + '</tr>';
   }).join('');
   const nota = prev.rows.length > 15 ? `<figcaption style="font:.74rem var(--mono);color:var(--muted);padding:10px 14px">mostrando 15 de ${int(prev.rows.length)} linhas · o arquivo completo está no download</figcaption>` : '';
   return `<div class="panel preview reveal"><table><thead>${head}</thead><tbody>${body}</tbody></table>${nota}</div>`;

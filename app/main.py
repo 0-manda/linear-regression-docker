@@ -11,13 +11,14 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import GridSearchCV, KFold, cross_val_predict
+from sklearn.linear_model import LinearRegression
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler
 from app.graficos import grafico_teste, grafico_treino
 from app.cripto import criptografar, descriptografar
 
-app = FastAPI(title="Trabalho PI - Regressão com KNN")
+app = FastAPI(title="Trabalho PI - Regressão com KNN (e regressão linear para comparar)")
 
 # CORS: permite que um front em outra origem (outra porta, domínio ou file://) chame a API.
 # Usamos "*" (qualquer origem) porque a API não usa cookies nem login
@@ -47,6 +48,7 @@ def inicio():
 PASTA_MODELOS = Path("/code/modelos")
 PASTA_MODELOS.mkdir(parents=True, exist_ok=True)
 ARQ_MODELO = PASTA_MODELOS / "modelo.joblib"
+ARQ_MODELO_LINEAR = PASTA_MODELOS / "modelo_linear.joblib"
 ARQ_METRICAS = PASTA_MODELOS / "metricas.json"
 ARQ_PREVISOES = PASTA_MODELOS / "previsoes.csv"
 ARQ_GRAFICO_TREINO = PASTA_MODELOS / "grafico_treino.png"
@@ -105,7 +107,8 @@ def calcular_metricas(y, y_prev):
     return {
         "rmse": round(float(mean_squared_error(y, y_prev) ** 0.5), 4),
         "mae": round(float(mean_absolute_error(y, y_prev)), 4),
-        "r2": round(float(r2_score(y, y_prev)), 4),
+        # Com menos de 2 linhas o R² não existe, então devolvemos None (vira null no JSON)
+        "r2": round(float(r2_score(y, y_prev)), 4) if len(y) >= 2 else None,
     }
 
 
@@ -114,6 +117,8 @@ async def train(arquivo: UploadFile = File(...)):
     df = ler_csv(await ler_arquivo_criptografado(arquivo), FEATURES + [ALVO])
     if len(df) < 20:
         raise HTTPException(400, "Poucas linhas para treinar (mínimo 20).")
+    if df[ALVO].nunique() < 2:
+        raise HTTPException(400, "A coluna 'time' tem um valor só: não há o que aprender.")
 
     X, y = df[FEATURES], df[ALVO]
 
@@ -149,9 +154,29 @@ async def train(arquivo: UploadFile = File(...)):
     # Divide os valores reais em 3 faixas (baixos, médios, altos) para ver onde o modelo erra mais
     faixas = pd.qcut(y.rank(method="first"), 3, labels=["valores baixos", "valores médios", "valores altos"])
 
+    # ---- REGRESSÃO LINEAR (só para comparar com o KNN) ----
+    # Mesma receita: min-max + modelo, avaliado com a mesma validação cruzada 10-fold
+    linear = Pipeline([
+        ("minmax", MinMaxScaler()),
+        ("regressao", LinearRegression()),
+    ])
+    y_prev_linear = cross_val_predict(linear, X, y, cv=KFold(n_splits=10, shuffle=True, random_state=42))
+    metricas_linear = calcular_metricas(y, y_prev_linear)
+    linear.fit(X, y)  # treino final com todos os dados
+    joblib.dump(linear, ARQ_MODELO_LINEAR)
+
     metricas["linhas_treino"] = len(df)
     metricas["melhor_k"] = int(melhor_k)
     metricas["insights"] = insights_treino(X, y, y_prev, faixas, melhor_k, metricas)
+    metricas["insights"].append(
+        f"Comparação: o KNN erra em média {metricas['mae']:.1f} e a regressão linear "
+        f"erra {metricas_linear['mae']:.1f}."
+    )
+    metricas["regressao_linear"] = metricas_linear
+
+    # Base nova = começa do zero: apaga o teste e as previsões do modelo antigo
+    ARQ_GRAFICO_TESTE.unlink(missing_ok=True)
+    ARQ_PREVISOES.unlink(missing_ok=True)
 
     grafico_treino(y, y_prev, faixas, erros_por_k, melhor_k, ARQ_GRAFICO_TREINO)
     joblib.dump(busca.best_estimator_, ARQ_MODELO)
@@ -198,21 +223,27 @@ def reset():
 
 @app.post("/predict")
 async def predict(arquivo: UploadFile = File(...)):
-    if not ARQ_MODELO.exists():
+    if not ARQ_MODELO.exists() or not ARQ_MODELO_LINEAR.exists():
         raise HTTPException(400, "Nenhum modelo treinado. Use /train primeiro.")
     modelo = joblib.load(ARQ_MODELO)
 
     # Se o CSV tiver a coluna 'time' preenchida, é teste (avaliamos);
     # se não tiver (ou estiver vazia), é aplicação (só prevemos)
     conteudo = await ler_arquivo_criptografado(arquivo)
-    bruto = pd.read_csv(io.BytesIO(conteudo))
+    try:
+        bruto = pd.read_csv(io.BytesIO(conteudo))
+    except Exception:
+        raise HTTPException(400, "Não consegui ler o arquivo como CSV.")
     tem_rotulo = ALVO in bruto.columns and bruto[ALVO].notna().any()
     colunas = FEATURES + [ALVO] if tem_rotulo else FEATURES
     df = ler_csv(conteudo, colunas)
 
     # Previsão (o pipeline aplica o min-max do treino automaticamente).
     # O modelo usa SÓ as 5 colunas de entrada; o 'time' do teste é só gabarito.
-    df["time_previsto"] = modelo.predict(df[FEATURES]).round(4)
+    df["time_previsto_knn"] = modelo.predict(df[FEATURES]).round(4)
+    # Previsão da regressão linear, numa coluna separada (só para comparar)
+    linear = joblib.load(ARQ_MODELO_LINEAR)
+    df["time_previsto_regressao_linear"] = linear.predict(df[FEATURES]).round(4)
     df.to_csv(ARQ_PREVISOES, index=False)
 
     # Alerta: quantos valores ficaram fora da faixa (mín/máx) vista no treino
@@ -227,13 +258,28 @@ async def predict(arquivo: UploadFile = File(...)):
 
     if tem_rotulo:
         esperado = json.loads(ARQ_METRICAS.read_text())
-        real = calcular_metricas(df[ALVO], df["time_previsto"])
-        grafico_teste(df[ALVO], df["time_previsto"], esperado, real, ARQ_GRAFICO_TESTE)
+        real = calcular_metricas(df[ALVO], df["time_previsto_knn"])
+        grafico_teste(df[ALVO], df["time_previsto_knn"], esperado, real, ARQ_GRAFICO_TESTE)
 
         resposta["mensagem"] += " e veja os gráficos em /graficos/teste"
         resposta["desempenho_real"] = real
         resposta["desempenho_esperado"] = {k: esperado[k] for k in ["rmse", "mae", "r2"]}
         resposta["insights"] = insights_teste(esperado, real, int(fora.values.sum()))
+
+        # Mesma comparação para a regressão linear
+        real_linear = calcular_metricas(df[ALVO], df["time_previsto_regressao_linear"])
+        resposta["regressao_linear"] = {
+            "desempenho_real": real_linear,
+            "desempenho_esperado": esperado["regressao_linear"],
+        }
+        resposta["insights"].append(
+            f"Comparação no teste: o KNN errou em média {real['mae']:.1f} "
+            f"e a regressão linear errou {real_linear['mae']:.1f}."
+        )
+
+    else:
+        # Aplicação (sem rótulo): não há teste novo, então some o gráfico de teste antigo
+        ARQ_GRAFICO_TESTE.unlink(missing_ok=True)
 
     return resposta
 
